@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Flappy Game</title>
+  <style>
+    body { 
+      margin: 0; 
+      background: #000; /* Black background for the rest of the page */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden; /* Prevents the page from scrolling */
+      touch-action: none; /* Prevents mobile gestures from interfering with play */
+    }
+
+    canvas { 
+      background: #70c5ce;
+      display: block; 
+      /* Makes the canvas responsive: it will shrink to fit small screens */
+      max-width: 100%;
+      max-height: 100vh;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="game"></canvas>
+
+  <script src="game.js"></script>
+</body>
+</html>
