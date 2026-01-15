@@ -1,8 +1,6 @@
 // ===== CANVAS SETUP =====
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-
-// Set internal resolution
 canvas.width = 400;
 canvas.height = 600;
 
@@ -16,11 +14,7 @@ const flapSnd = new Audio("flap.mp3");
 const scoreSnd = new Audio("score.mp3");
 const crashSnd = new Audio("crash.mp3");
 const bgMusic = new Audio("background_music.mp3");
-
-// Audio Settings
 bgMusic.loop = true;
-flapSnd.preload = "auto";
-crashSnd.preload = "auto";
 
 // ===== GAME STATE =====
 let gameStarted = false;
@@ -28,14 +22,18 @@ let isGameOver = false;
 let isWaitingForAudio = false; 
 let score = 0;
 let finalScore = 0;
-let frame = 0;
+let highScore = localStorage.getItem("flappyHighScore") || 0;
+
+// Time-based movement variables
+let lastTime = 0;
+const targetFPS = 60; 
+let pipeSpawnTimer = 0;
 
 const bird = { x: 80, y: 250, size: 40, velocity: 0, gravity: 0.35, jump: -7 };
 let pipes = [];
 const pipeWidth = 60;
 const pipeGap = 180;
 
-// ===== HELPER FUNCTIONS =====
 function createPipe() {
   const topHeight = Math.floor(Math.random() * (canvas.height - pipeGap - 100)) + 50;
   pipes.push({ x: canvas.width, topHeight: topHeight, passed: false });
@@ -46,7 +44,7 @@ function resetGame() {
   bird.velocity = 0;
   pipes = [];
   score = 0;
-  frame = 0;
+  pipeSpawnTimer = 0;
   isGameOver = false;
   gameStarted = false; 
   isWaitingForAudio = false;
@@ -69,31 +67,41 @@ function drawStartScreen() {
   ctx.fillStyle = "white";
   ctx.font = "bold 35px Arial";
   ctx.fillText("FLAPPY GAME", canvas.width / 2, 200);
+  ctx.font = "22px Arial";
+  ctx.fillText("BEST SCORE: " + highScore, canvas.width / 2, 260);
   ctx.font = "20px Arial";
-  ctx.fillText("Tap or Press Space to Start", canvas.width / 2, 300);
+  ctx.fillText("Tap or Space to Start", canvas.width / 2, 340);
 }
 
 function drawGameOver() {
   ctx.drawImage(overImg, (canvas.width - 320) / 2, 80, 320, 320);
-  ctx.fillStyle = "red";
-  ctx.font = "bold 40px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("TOTAL SCORE: " + finalScore, canvas.width / 2, 460);
-  
+  ctx.fillStyle = "white";
+  ctx.font = "bold 30px Arial";
+  ctx.fillText("SCORE: " + finalScore, canvas.width / 2, 430);
+  ctx.fillStyle = "#FFD700"; 
+  ctx.fillText("BEST: " + highScore, canvas.width / 2, 470);
   ctx.fillStyle = "white";
   ctx.font = "20px Arial";
-  
   if (isWaitingForAudio) {
-    ctx.fillStyle = "#aaaaaa";
-    ctx.fillText("Wait for it...", canvas.width / 2, 520);
+    ctx.fillText("Wait for it...", canvas.width / 2, 530);
   } else {
-    ctx.fillStyle = "white";
-    ctx.fillText("Tap or Space to Restart", canvas.width / 2, 520);
+    ctx.fillText("Tap or Space to Restart", canvas.width / 2, 530);
   }
 }
 
-// ===== MAIN GAME LOOP =====
-function update() {
+// ===== MAIN GAME LOOP (TIME-BASED) =====
+function update(timestamp) {
+  const deltaTime = timestamp - lastTime;
+  lastTime = timestamp;
+
+  const speedAdjust = isNaN(deltaTime) ? 1 : deltaTime / (1000 / targetFPS);
+
+  if (deltaTime > 100) {
+    requestAnimationFrame(update);
+    return;
+  }
+
   if (isGameOver) {
     drawGameOver();
     requestAnimationFrame(update);
@@ -106,22 +114,18 @@ function update() {
     return;
   }
 
-  // Check for hit
   if (checkCollision()) {
     isGameOver = true;
     isWaitingForAudio = true; 
     finalScore = score;
-    
+    if (finalScore > highScore) {
+        highScore = finalScore;
+        localStorage.setItem("flappyHighScore", highScore);
+    }
     bgMusic.pause();
     bgMusic.currentTime = 0;
-    
     crashSnd.play().catch(() => { isWaitingForAudio = false; });
-
-    // Step 1 Fix: Unlock after 1.5s regardless of audio length
-    setTimeout(() => {
-      isWaitingForAudio = false;
-    }, 1500); 
-    
+    setTimeout(() => { isWaitingForAudio = false; }, 1500); 
     requestAnimationFrame(update);
     return;
   }
@@ -129,35 +133,30 @@ function update() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
 
-  // Bird Physics
-  bird.velocity += bird.gravity;
-  bird.y += bird.velocity;
+  bird.velocity += bird.gravity * speedAdjust;
+  bird.y += bird.velocity * speedAdjust;
   ctx.drawImage(birdImg, bird.x, bird.y, bird.size, bird.size);
 
-  // Pipes Logic
-  if (frame % 100 === 0) createPipe();
-  frame++;
+  pipeSpawnTimer += 1 * speedAdjust;
+  if (pipeSpawnTimer >= 100) {
+    createPipe();
+    pipeSpawnTimer = 0;
+  }
 
   for (let i = pipes.length - 1; i >= 0; i--) {
     let p = pipes[i];
-    p.x -= 2.5;
-    
-    if (p.x + pipeWidth < 0) { 
-        pipes.splice(i, 1); 
-        continue; 
-    }
-    
+    p.x -= 2.5 * speedAdjust; 
+
+    if (p.x + pipeWidth < 0) { pipes.splice(i, 1); continue; }
     if (!p.passed && bird.x > p.x + pipeWidth) {
       score++;
       p.passed = true;
       scoreSnd.play().catch(() => {});
     }
-    
-    ctx.drawImage(pipeImg, p.x, 0, pipeWidth, p.topHeight); // Top
-    ctx.drawImage(pipeImg, p.x, p.topHeight + pipeGap, pipeWidth, canvas.height); // Bottom
+    ctx.drawImage(pipeImg, p.x, 0, pipeWidth, p.topHeight);
+    ctx.drawImage(pipeImg, p.x, p.topHeight + pipeGap, pipeWidth, canvas.height);
   }
 
-  // Draw Score
   ctx.fillStyle = "white";
   ctx.font = "bold 30px Arial";
   ctx.textAlign = "left";
@@ -166,14 +165,8 @@ function update() {
   requestAnimationFrame(update);
 }
 
-// ===== STEP 3: BUG-FREE INPUT HANDLING =====
+// ===== INPUT HANDLING =====
 function handleInput(e) {
-  // Mobile Audio Policy Fix: Resume audio context on first tap
-  if (window.AudioContext || window.webkitAudioContext) {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-  }
-
   if (isGameOver) {
     if (!isWaitingForAudio) resetGame();
   } else if (!gameStarted) {
@@ -188,25 +181,19 @@ function handleInput(e) {
   }
 }
 
-// Mobile Touch (Step 3 Fix: preventDefault stops ghost clicks)
 canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
     handleInput(e);
 }, { passive: false });
 
-// Laptop/Desktop Mouse
-canvas.addEventListener("mousedown", (e) => {
-    // Only handle mousedown if touch isn't used
-    handleInput(e);
-});
+canvas.addEventListener("mousedown", handleInput);
 
-// Laptop Spacebar
 document.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
-      e.preventDefault(); // Stop page scrolling
+      e.preventDefault();
       handleInput(e);
   }
 });
 
-// START
-update();
+requestAnimationFrame(update);
+
